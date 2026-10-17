@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Ten-Character Bigram</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one lab-notebook column; each stage = prose + the PyTorch line + a live visual of the tensors */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --ink:#18202d; --muted:#5b6577; --line:#d8dde6;
+  --accent:#0d7a72; --accent-soft:#d5ece9; --amber:#b86e0c; --amber-soft:#f6e6cc;
+  --hot:#d9622b; --cold:#3567b5; --cell0:#eef0f4;
+  --f-display:"Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body:"Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151b; --surface:#192029; --ink:#e5e9f0; --muted:#9aa4b4; --line:#2b3440;
+  --accent:#3fc2b4; --accent-soft:#183a38; --amber:#f0a646; --amber-soft:#3d2e17;
+  --hot:#f0864f; --cold:#6b9ce6; --cell0:#1f2731; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#11151b; --surface:#192029; --ink:#e5e9f0; --muted:#9aa4b4; --line:#2b3440;
+  --accent:#3fc2b4; --accent-soft:#183a38; --amber:#f0a646; --amber-soft:#3d2e17;
+  --hot:#f0864f; --cold:#6b9ce6; --cell0:#1f2731; color-scheme:dark }
+
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:32px 64px}
+.wrap{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(30px,5vw,44px);font-weight:700;letter-spacing:-.01em}
+h2{font-size:24px;font-weight:700;display:flex;gap:12px;align-items:baseline}
+h2 .n{font-family:var(--f-mono);font-size:14px;color:var(--accent);font-weight:600}
+h3{font-size:15px;font-weight:600;font-family:var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+p{margin:0;max-width:68ch}
+code,.mono{font-family:var(--f-mono);font-size:.88em}
+.lede{color:var(--muted);font-size:18px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px clamp(16px,3vw,28px);display:flex;flex-direction:column;gap:16px;min-width:0}
+pre.code{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-family:var(--f-mono);font-size:13px;line-height:1.6;overflow-x:auto}
+pre.code .ln{display:block;padding:0 6px;margin:0 -6px;border-radius:3px}
+pre.code .ln.on{background:var(--amber-soft);box-shadow:inset 3px 0 0 var(--amber)}
+.cm{color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.row>*{min-width:0}
+.note{font-size:14px;color:var(--muted)}
+.callout{border-left:3px solid var(--accent);padding:6px 0 6px 12px;font-size:15px;max-width:68ch}
+.ok{color:var(--accent);font-weight:600}
+.bad{color:var(--hot);font-weight:600}
+button{font:600 14px var(--f-body);background:var(--accent);color:var(--surface);border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+button:focus-visible,input:focus-visible,.chip.click:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+button:disabled{opacity:.5;cursor:default}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+input[type=text]{font:15px var(--f-mono);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%;max-width:340px}
+
+/* chips = one token */
+.chip{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:34px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);font-family:var(--f-mono);font-size:14px;line-height:1.2}
+.chip small{font-size:10px;color:var(--muted)}
+.chip.id{background:var(--accent-soft);border-color:transparent}
+.chip.err{border-color:var(--hot);color:var(--hot)}
+.chip.click{cursor:pointer}
+.chip.sel{outline:2px solid var(--amber);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.arrow{font-family:var(--f-mono);color:var(--muted);align-self:center}
+
+/* corpus strip */
+.strip{display:flex;flex-wrap:wrap;gap:2px}
+.strip span{width:20px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:12px;border-radius:3px}
+.strip .tr{background:var(--accent-soft)} .strip .va{background:var(--amber-soft)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+
+/* batch window */
+.win{display:grid;gap:4px;align-items:center;font-family:var(--f-mono);font-size:13px}
+.win .lab{color:var(--muted);font-size:12px;padding-right:6px}
+.win .c{height:30px;display:flex;align-items:center;justify-content:center;border-radius:4px;flex-direction:column;line-height:1}
+.win .c small{font-size:9px;color:var(--muted)}
+.win .d{background:var(--cell0)} .win .x{background:var(--accent-soft)} .win .y{background:var(--amber-soft)}
+.unroll{font-family:var(--f-mono);font-size:13px;display:grid;gap:3px}
+.unroll .tg{color:var(--amber);font-weight:600}
+
+/* heatmaps */
+.scroll{overflow-x:auto;max-width:100%}
+.hm{display:grid;gap:2px;font-family:var(--f-mono);font-size:10px}
+.hm .h{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px}
+.hm .v{display:flex;align-items:center;justify-content:center;border-radius:2px;color:var(--ink);font-variant-numeric:tabular-nums}
+.hm .v.tgt{outline:2px solid var(--amber);outline-offset:-2px;font-weight:600}
+.hm .rowsel{box-shadow:0 0 0 2px var(--amber)}
+.tensor{display:flex;gap:14px;flex-wrap:wrap}
+.tensor .blk{display:flex;flex-direction:column;gap:4px}
+.cap{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+
+/* loss table */
+.lt{display:grid;grid-template-columns:auto repeat(10,minmax(22px,1fr)) auto auto;gap:2px;font-family:var(--f-mono);font-size:11px;align-items:center;min-width:520px}
+.lt .rl{padding-right:8px;color:var(--muted);white-space:nowrap}
+.lt .num{padding-left:10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lt .hd{color:var(--muted);text-align:center}
+.total{font-family:var(--f-mono);font-size:14px;display:flex;flex-wrap:wrap;gap:6px 20px}
+.total b{color:var(--accent)}
+
+/* generation panels */
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px}
+.panel{border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0;transition:opacity .2s}
+.panel.pending{opacity:.45}
+.panel.active{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+.panel .t{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.panel .t b{color:var(--ink)}
+.bars{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;align-items:end;height:110px}
+.bar{background:var(--accent);border-radius:2px 2px 0 0;min-height:1px;position:relative}
+.bar.pick{background:var(--amber)}
+.barlab{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;font-family:var(--f-mono);font-size:10px;text-align:center;color:var(--muted)}
+.barlab b{color:var(--ink);font-size:12px;display:block}
+.stack{position:relative;display:flex;height:34px;border-radius:4px;overflow:hidden;border:1px solid var(--line)}
+.stack div{display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:11px;border-right:1px solid var(--surface);overflow:hidden}
+.marker{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.ctxbox{font-family:var(--f-mono);font-size:15px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-all;min-height:48px;max-height:180px;overflow:auto}
+.ctxbox .new{background:var(--amber-soft);color:var(--amber);font-weight:600;border-radius:2px}
+.ctxbox .nl{color:var(--muted)}
+.vec{font-family:var(--f-mono);font-size:11px;display:grid;grid-template-columns:repeat(5,1fr);gap:2px 8px;font-variant-numeric:tabular-nums}
+.vec span{white-space:nowrap}
+.mini{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:11px;font-variant-numeric:tabular-nums}
+.mini td,.mini th{padding:1px 4px;text-align:right;border-bottom:1px solid var(--line)}
+.mini th{color:var(--muted);font-weight:400}
+.mini tr.pick td{color:var(--amber);font-weight:600}
+
+/* training */
+svg text{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
+.stat{font-family:var(--f-mono);font-size:14px}
+
+/* journey */
+.jctl label{font-size:14px;color:var(--muted);display:flex;gap:6px;align-items:center}
+select{font:14px var(--f-mono);padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+select:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.flow{display:grid;grid-template-columns:repeat(6,minmax(96px,1fr));column-gap:24px;row-gap:6px;min-width:680px;padding:4px 2px}
+.fnode{position:relative;border:1px solid var(--line);border-radius:6px;padding:8px 6px;text-align:center;font-family:var(--f-mono);font-size:12px;background:var(--bg);font-variant-numeric:tabular-nums}
+.fnode small{display:block;color:var(--muted);font-size:10px;margin-bottom:2px;text-transform:uppercase;letter-spacing:.05em}
+.fnode.done{border-color:var(--accent)}
+.fnode.on{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber);background:var(--amber-soft)}
+.fnode:not(:nth-child(6))::after{content:"→";position:absolute;right:-19px;top:50%;transform:translateY(-50%);color:var(--accent);font-weight:600}
+.bnode{position:relative;font-family:var(--f-mono);font-size:11px;color:var(--amber);text-align:center;padding:5px 2px 0;border-top:2px solid var(--amber);min-height:36px;line-height:1.3}
+.bnode.off{border-top-color:transparent;color:transparent}
+.bnode.arr::after{content:"←";position:absolute;right:-19px;top:-12px;color:var(--amber);font-weight:600}
+.bnode.on{background:var(--amber-soft);border-radius:0 0 4px 4px}
+.jvec{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;font-family:var(--f-mono);font-size:11px;text-align:center;font-variant-numeric:tabular-nums}
+.jvec div{border-radius:3px;padding:4px 0;display:flex;flex-direction:column;gap:1px}
+.jvec div.tgt{outline:2px solid var(--amber);outline-offset:-2px;font-weight:600}
+.jvec small{color:var(--muted);font-size:10px}
+.jrow{display:grid;grid-template-columns:88px minmax(0,1fr);gap:8px;align-items:center}
+.jrow>span{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.dbars{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;height:130px;background:linear-gradient(var(--muted),var(--muted)) center/100% 1px no-repeat}
+.dcol{position:relative}
+.dbar{position:absolute;left:0;right:0;border-radius:2px}
+.gbars{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;height:130px;align-items:end}
+.gcol{display:flex;gap:1px;align-items:flex-end;height:100%}
+.gcol div{flex:1;border-radius:2px 2px 0 0;min-height:1px}
+.big{font-family:var(--f-mono);font-size:clamp(14px,2.4vw,18px)}
+.big b{color:var(--amber)}
+.snip{font-family:var(--f-mono);font-size:15px;letter-spacing:.04em;word-break:break-all}
+.snip .hx{background:var(--accent-soft);border-radius:2px;padding:0 2px;font-weight:600}
+.snip .hy{background:var(--amber-soft);color:var(--amber);border-radius:2px;padding:0 2px;font-weight:600}
+.hist{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-family:var(--f-mono);font-size:13px}
+.hist span.l{background:var(--accent-soft);border-radius:4px;padding:2px 6px}
+.hist span.l.now{background:var(--amber-soft);color:var(--amber);font-weight:600}
+@media (prefers-reduced-motion:reduce){.panel{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <h1>Ten-Character Bigram</h1>
+    <p class="lede">The same model as <code>my_llm_1.ipynb</code>, shrunk to a 10-character vocabulary so every number fits on screen. Everything below is computed live in your browser: a real embedding table, a real cross-entropy loss, real sampling and real training.</p>
+    <p class="note">Notebook shapes: vocab_size = 65, B = 32, T = 8. Here: <b>vocab_size = 10</b>, <b>B = 2</b>, <b>T = 4</b> for display (training below uses B = 32, T = 8).</p>
+  </header>
+
+  <!-- 1 -->
+  <section>
+    <h2><span class="n">1</span>Vocabulary</h2>
+    <p>Collect every distinct character in the text and sort them. Each one's position in the sorted list becomes its <b>id</b>. Our toy corpus has exactly 10 distinct characters. <code>↵</code> is the newline and <code>␣</code> is the space.</p>
+    <pre class="code">chars = sorted(list(set(text)))     <span class="cm"># 10 unique characters</span>
+stoi  = {ch: i for i, ch in enumerate(chars)}
+itos  = {i: ch for i, ch in enumerate(chars)}</pre>
+    <div class="chips" id="vocab"></div>
+    <p class="note">Why is <code>↵</code> first? Sorting uses character codes: newline is 10, space is 32, <code>!</code> is 33, and letters start at 97.</p>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2><span class="n">2</span>encode / decode</h2>
+    <p>Type something. <code>encode</code> looks up each character in <code>stoi</code>. <code>decode</code> maps the ids back through <code>itos</code>. Only the 10 vocab characters can be encoded. Anything else is a <code>KeyError</code> in Python.</p>
+    <pre class="code">encode = lambda s: [stoi[c] for c in s]
+decode = lambda l: ''.join([itos[i] for i in l])</pre>
+    <label for="enc-in" class="note">String s</label>
+    <input type="text" id="enc-in" value="hello world!" autocomplete="off" spellcheck="false">
+    <div class="row" style="flex-direction:column;gap:10px">
+      <div><h3>encode(s)</h3><div class="chips" id="enc-out" style="margin-top:6px"></div></div>
+      <div><h3>decode(encode(s))</h3><div id="dec-out" class="mono" style="margin-top:6px;font-size:15px"></div></div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2><span class="n">3</span>Tensor and 90/10 split</h2>
+    <p>The whole text becomes one long 1-D tensor of ids (<code>torch.long</code>, because ids are used as <i>indices</i>). The first 90% is for training. The last 10% is held out to check generalisation. There's no shuffling: it's a straight cut.</p>
+    <pre class="code">data = torch.tensor(encode(text), dtype=torch.long)
+n = int(0.9 * len(data))
+train_data, val_data = data[:n], data[n:]</pre>
+    <div class="legend"><span><i class="sw" style="background:var(--accent-soft)"></i>train_data</span><span><i class="sw" style="background:var(--amber-soft)"></i>val_data</span><span id="split-n" class="mono"></span></div>
+    <div class="strip" id="strip"></div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2><span class="n">4</span>get_batch: the shift by one</h2>
+    <p>Pick <b>B = 2</b> random start positions <code>i</code>. Read <b>T + 1 = 5</b> characters from each one. <code>x</code> is the first 4 and <code>y</code> is the last 4, so <b>y is x shifted left by one</b>. Each <code>y[t]</code> is the character that follows <code>x[t]</code>.</p>
+    <pre class="code">ix = torch.randint(len(d) - block_size, (batch_size,))
+x  = torch.stack([d[i  :i+block_size  ] for i in ix])   <span class="cm"># (B, T) = (2, 4)</span>
+y  = torch.stack([d[i+1:i+block_size+1] for i in ix])   <span class="cm"># (B, T) = (2, 4)</span></pre>
+    <div class="btns"><button id="new-batch">New random batch</button></div>
+    <div class="row" id="batch-view" style="gap:28px"></div>
+    <div>
+      <h3>One row of 4 hides 4 training examples (row b = 0)</h3>
+      <div class="unroll" id="unroll" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <h2><span class="n">5</span>The model is one lookup table</h2>
+    <p><code>nn.Embedding(10, 10)</code> is a 10 × 10 grid of learnable numbers. <b>Row r</b> holds the model's scores (logits) for <i>which character comes after character r</i>. Red means "likely next" and blue means "unlikely next". At the start they're random, drawn from N(0, 1).</p>
+    <pre class="code">self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)  <span class="cm"># (10, 10)</span>
+logits = self.token_embedding_table(idx)                         <span class="cm"># (B,T) → (B,T,C) = (2,4,10)</span></pre>
+    <p class="callout">Click any token in <code>x</code>. The lookup <b>copies that token's row</b> out of the table into the logits tensor. Every one of the 2 × 4 = 8 tokens gets its own row, which is how the shape <code>(2, 4)</code> grows a third axis, C = 10.</p>
+    <div class="row" style="gap:28px">
+      <div><h3>idx = x &nbsp;(2, 4)</h3><div id="x-pick" style="display:grid;gap:5px;margin-top:8px"></div></div>
+      <div style="flex:1 1 360px"><h3>Embedding table W &nbsp;(10, 10)</h3><p class="cap" style="margin:4px 0 8px">rows = current char · columns = next char</p><div class="scroll"><div class="hm" id="table"></div></div></div>
+    </div>
+    <div><h3>logits &nbsp;(B, T, C) = (2, 4, 10)</h3><p class="cap" id="lookup-cap" style="margin:4px 0 8px"></p><div class="tensor" id="logits-tensor"></div></div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <h2><span class="n">6</span>The loss: cross-entropy</h2>
+    <p><code>F.cross_entropy</code> wants a flat list of rows, so <code>(2, 4, 10)</code> is reshaped to <code>(8, 10)</code>. Each row is softmaxed into probabilities. Then we read off the probability of the <b>true next character</b> (outlined), take <code>−ln</code> of it, and average over all 8 rows.</p>
+    <pre class="code">B, T, C = logits.shape
+logits  = logits.view(B*T, C)        <span class="cm"># (8, 10)</span>
+targets = targets.view(B*T)          <span class="cm"># (8,)</span>
+loss = F.cross_entropy(logits, targets)   <span class="cm"># mean of −ln p(target)</span></pre>
+    <div class="scroll"><div class="lt" id="loss-table"></div></div>
+    <div class="total" id="loss-total"></div>
+    <div class="callout" id="loss-explain"></div>
+  </section>
+
+  <!-- 7 journey -->
+  <section id="journey">
+    <h2><span class="n">7</span>Journey of one example: forward, loss, backward, update</h2>
+    <p>Follow <b>one</b> (input, target) pair through a complete training step. A real batch does this for all B × T pairs at once and averages the gradients, but every pair takes exactly this path. This section uses its own copy of the table, so it won't disturb the model in the other sections.</p>
+    <div class="btns jctl">
+      <label for="j-x">input x <select id="j-x"></select></label>
+      <label for="j-y">target y <select id="j-y"></select></label>
+      <label for="j-lr">learning rate <select id="j-lr"><option>0.1</option><option>0.5</option><option selected>1.0</option><option>2.0</option></select></label>
+    </div>
+    <h3>The path · forward on top, gradients flowing back underneath</h3>
+    <div class="scroll"><div class="flow" id="j-flow"></div></div>
+    <pre class="code" id="j-code"><span class="ln">x_char, y_char = text[i], text[i+1]           <span class="cm"># one (input, target) pair</span></span><span class="ln">idx, targets = tensor([[stoi[x_char]]]), tensor([[stoi[y_char]]])</span><span class="ln">logits = self.token_embedding_table(idx)      <span class="cm"># (1, 1, 10)</span></span><span class="ln">logits, targets = logits.view(1, 10), targets.view(1)</span><span class="ln">probs = F.softmax(logits, dim=-1)             <span class="cm"># happens inside cross_entropy</span></span><span class="ln">loss = -probs[0, targets].log()              <span class="cm"># = F.cross_entropy(logits, targets)</span></span><span class="ln">optimizer.zero_grad(); loss.backward()        <span class="cm"># ∂L/∂logits = probs − onehot(y)</span></span><span class="ln">                                              <span class="cm"># ∂L/∂W[idx] += ∂L/∂logits  (other rows: 0)</span></span><span class="ln">optimizer.step()                              <span class="cm"># W -= lr * W.grad   (plain SGD here)</span></span><span class="ln">logits, loss = model(idx, targets)            <span class="cm"># forward again: loss is lower</span></span></pre>
+    <div class="btns"><button class="ghost" id="j-prev">← Back</button><button id="j-next">Next →</button><button class="ghost" id="j-again">Run another training step</button><button class="ghost" id="j-reset">Copy weights from the model</button></div>
+    <div class="jstage"><h3 id="j-title" style="color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0;font-family:var(--f-display)"></h3><div id="j-detail" style="display:flex;flex-direction:column;gap:14px;margin-top:12px"></div></div>
+  </section>
+
+  <!-- 8 -->
+  <section>
+    <h2><span class="n">8</span>generate(): one character at a time</h2>
+    <p>Press <b>Next step</b> to walk through the loop body. The highlighted code line and the highlighted panel are the same step. The sampling draw <code>r</code> is fixed ahead of time so you can see which slice it lands in.</p>
+    <pre class="code" id="gen-code"><span class="ln">logits, _ = self(idx)                        <span class="cm"># (1, T, 10)</span></span><span class="ln">logits = logits[:, -1, :]                    <span class="cm"># (1, 10)  keep last time step</span></span><span class="ln">probs = F.softmax(logits, dim=-1)            <span class="cm"># (1, 10)  scores → probabilities</span></span><span class="ln">idx_next = torch.multinomial(probs, num_samples=1)  <span class="cm"># (1, 1)</span></span><span class="ln">idx = torch.cat((idx, idx_next), dim=1)      <span class="cm"># (1, T+1)</span></span></pre>
+    <div class="btns">
+      <button id="gen-step">Next step</button>
+      <button class="ghost" id="gen-20">Generate 20 characters</button>
+      <button class="ghost" id="gen-reset">Reset to ↵</button>
+    </div>
+    <div><h3>idx (the text so far)</h3><div class="ctxbox" id="ctx" style="margin-top:6px"></div></div>
+    <div class="panels" id="panels">
+      <div class="panel" data-p="0"><div class="t"><b>① forward</b> · logits (1, T, 10)</div><div id="p-forward"></div></div>
+      <div class="panel" data-p="1"><div class="t"><b>② slice [:, -1, :]</b> · last row only → (1, 10)</div><div id="p-slice"></div></div>
+      <div class="panel" data-p="2"><div class="t"><b>③ softmax</b> · eˣ / Σeˣ</div><div id="p-softmax"></div></div>
+      <div class="panel" data-p="3"><div class="t"><b>④ multinomial</b> · sample one char</div><div id="p-sample"></div></div>
+      <div class="panel" data-p="4"><div class="t"><b>⑤ cat</b> · append and repeat</div><div id="p-cat"></div></div>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section>
+    <h2><span class="n">9</span>Training</h2>
+    <p>Each step samples a batch (B = 32, T = 8), computes the loss, backpropagates and lets AdamW nudge the table. Watch the left heatmap (the model's probabilities, softmax of each row) slowly turn into the right one (the true bigram frequencies counted from <code>train_data</code>). When training finishes, sections 5, 6 and 8 above use the trained table, and section 7 can copy it.</p>
+    <pre class="code">for step in range(max_iters):
+    xb, yb = get_batch('train')
+    logits, loss = model(xb, yb)
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()        <span class="cm"># dloss/dW[r, c] = p(c | r) − 1[c is target], averaged</span>
+    optimizer.step()</pre>
+    <div class="btns"><button id="train">Train 500 steps</button><button class="ghost" id="train-reset">Reset to random weights</button></div>
+    <div class="stat" id="train-stat"></div>
+    <div class="scroll"><svg id="chart" viewBox="0 0 640 230" style="width:100%;min-width:420px;height:auto;display:block" role="img" aria-label="Train and validation loss over steps"></svg></div>
+    <div class="legend"><span><i class="sw" style="background:var(--accent)"></i>train loss</span><span><i class="sw" style="background:var(--amber)"></i>val loss</span><span>– – ln(10) = 2.303, the loss of uniform guessing</span><span>· · · best a bigram can do on train</span></div>
+    <div class="row" style="gap:28px">
+      <div style="flex:1 1 300px"><h3>Model: softmax(W) per row</h3><div class="scroll" style="margin-top:8px"><div class="hm" id="hm-model"></div></div></div>
+      <div style="flex:1 1 300px"><h3>Truth: bigram counts, normalised</h3><div class="scroll" style="margin-top:8px"><div class="hm" id="hm-true"></div></div></div>
+    </div>
+    <p class="note">The notebook uses lr = 1e-3 for 5,000 steps. This demo uses lr = 1e-2 so it converges in a few hundred steps. Val loss here is exact over the whole val split, not an average of 200 random batches.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+// ---------- data & tokenizer ----------
+const corpus = "hello world!\nhello old world!\nwe rode where world red\nhold low\nhello!\nwho wore red\nwe hold hello!\nold dew\nworld were lower\nhello hello!\nwhere were we\nred dew\nhello world!\nwe owe\nlow wood\nroll hello\nhello red world!\nwho rode where\nold world\nhello!\n";
+const chars = [...new Set(corpus)].sort();
+const V = chars.length; // 10
+const stoi = Object.fromEntries(chars.map((c,i)=>[c,i]));
+const show = c => c === "\n" ? "↵" : c === " " ? "␣" : c;
+const encode = s => [...s].map(c => c in stoi ? stoi[c] : -1);
+const data = encode(corpus);
+const n = Math.floor(0.9 * data.length);
+const train = data.slice(0, n), val = data.slice(n);
+const ln10 = Math.log(V);
+
+// ---------- rng ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function gauss(r){let u=0;while(u===0)u=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*r())}
+const rBatch = mulberry32(1337), rTrain = mulberry32(99), rGen = mulberry32(7);
+
+// ---------- model state ----------
+let W, m, v, adamT, steps, hist;
+function initWeights(){
+  const r = mulberry32(42);
+  W = Array.from({length:V}, () => Array.from({length:V}, () => gauss(r)));
+  m = W.map(row => row.map(() => 0)); v = W.map(row => row.map(() => 0));
+  adamT = 0; steps = 0; hist = [{step:0, train:lossOn(train), val:lossOn(val)}];
+}
+const softmax = row => { const mx = Math.max(...row); const e = row.map(x => Math.exp(x - mx)); const s = e.reduce((a,b)=>a+b,0); return e.map(x => x/s); };
+function lossOn(d){ let s=0; for(let i=0;i<d.length-1;i++){ s -= Math.log(softmax(W[d[i]])[d[i+1]]); } return s/(d.length-1); }
+
+// true bigram probabilities from train
+const counts = Array.from({length:V}, () => Array(V).fill(0));
+for (let i=0;i<train.length-1;i++) counts[train[i]][train[i+1]]++;
+const trueP = counts.map(r => { const s = r.reduce((a,b)=>a+b,0); return r.map(c => s ? c/s : 0); });
+let optLoss = 0; { let tot=0; for(let i=0;i<train.length-1;i++){ optLoss -= Math.log(trueP[train[i]][train[i+1]]); tot++; } optLoss /= tot; }
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+const heat = x => { const a = Math.min(85, Math.abs(x)/3*85); return `color-mix(in oklab, var(${x>=0?"--hot":"--cold"}) ${a.toFixed(0)}%, var(--cell0))`; };
+const pheat = p => `color-mix(in oklab, var(--accent) ${Math.min(85, p*130).toFixed(0)}%, var(--cell0))`;
+const f2 = x => (x>=0?" ":"") + x.toFixed(2);
+
+// ---------- 1 vocab ----------
+chars.forEach((c,i) => $("vocab").append(el("span","chip", `${esc(show(c))}<small>id ${i}</small>`)));
+
+// ---------- 2 encode/decode ----------
+function renderEnc(){
+  const s = $("enc-in").value; const out = $("enc-out"); out.innerHTML = "";
+  const ids = encode(s); let okAll = true;
+  [...s].forEach((c,i) => {
+    if (ids[i] < 0) { okAll = false; out.append(el("span","chip err", `${esc(show(c))}<small>KeyError</small>`)); }
+    else out.append(el("span","chip id", `${ids[i]}<small>${esc(show(c))}</small>`));
+  });
+  if (!s.length) out.append(el("span","note","(empty string)"));
+  $("dec-out").innerHTML = okAll
+    ? `"${esc(ids.map(i=>show(chars[i])).join(""))}" &nbsp; <span class="ok">decode(encode(s)) == s ✓</span>`
+    : `<span class="bad">Can't encode: some characters aren't in the 10-character vocab.</span>`;
+}
+$("enc-in").addEventListener("input", renderEnc);
+
+// ---------- 3 split ----------
+$("split-n").textContent = `len(data) = ${data.length} · n = int(0.9 × ${data.length}) = ${n} · val = ${val.length}`;
+data.forEach((id,i) => { const s = el("span", i<n?"tr":"va", esc(show(chars[id]))); s.title = `data[${i}] = ${id}`; $("strip").append(s); });
+
+// ---------- 4 batch ----------
+const B = 2, T = 4;
+let batch, sel = {b:0, t:3};
+function newBatch(){
+  const ix = Array.from({length:B}, () => Math.floor(rBatch() * (train.length - T)));
+  batch = { ix, x: ix.map(i => train.slice(i, i+T)), y: ix.map(i => train.slice(i+1, i+T+1)) };
+}
+function renderBatch(){
+  const bv = $("batch-view"); bv.innerHTML = "";
+  batch.ix.forEach((i,b) => {
+    const box = el("div"); box.append(el("h3", null, `b = ${b} · i = ${i}`));
+    const g = el("div","win"); g.style.gridTemplateColumns = `auto repeat(${T+1}, 34px)`; g.style.marginTop = "8px";
+    const cell = (cls, id, col) => { const c = el("div", "c "+cls, `${esc(show(chars[id]))}<small>${id}</small>`); c.style.gridColumn = col; return c; };
+    g.append(el("div","lab",`data[${i}:${i+T+1}]`)); for (let k=0;k<=T;k++) g.append(cell("d", train[i+k], k+2));
+    const lx = el("div","lab","x"); lx.style.gridColumn = 1; g.append(lx); for (let k=0;k<T;k++) g.append(cell("x", batch.x[b][k], k+2));
+    const ly = el("div","lab","y"); ly.style.gridColumn = 1; g.append(ly); for (let k=0;k<T;k++) g.append(cell("y", batch.y[b][k], k+3));
+    box.append(g); bv.append(box);
+  });
+  const u = $("unroll"); u.innerHTML = "";
+  for (let t=0;t<T;t++){
+    const ctx = batch.x[0].slice(0,t+1).map(i=>show(chars[i])).join("");
+    u.append(el("div", null, `x[0, :${t+1}] = "${esc(ctx)}"`.padEnd(22," ").replace(/ /g,"&nbsp;") + ` → target <span class="tg">${esc(show(chars[batch.y[0][t]]))}</span>`));
+  }
+}
+$("new-batch").addEventListener("click", () => { newBatch(); renderBatch(); renderModel(); });
+
+// ---------- 5 table + logits ----------
+function hmGrid(container, mat, opts={}){
+  container.innerHTML = "";
+  const cs = opts.cell || "minmax(26px,1fr)";
+  container.style.gridTemplateColumns = `22px repeat(${V}, ${cs})`;
+  container.append(el("div","h",""));
+  chars.forEach(c => container.append(el("div","h", esc(show(c)))));
+  mat.forEach((row,r) => {
+    container.append(el("div","h", esc(show(chars[r]))));
+    row.forEach((x,c) => {
+      const d = el("div","v", opts.fmt ? opts.fmt(x) : "");
+      d.style.background = opts.color ? opts.color(x) : heat(x);
+      d.style.height = opts.h || "26px";
+      if (opts.rowSel === r) d.classList.add("rowsel");
+      container.append(d);
+    });
+  });
+}
+function renderTable(){
+  const px = $("x-pick"); px.innerHTML = "";
+  batch.x.forEach((row,b) => {
+    const line = el("div","chips");
+    row.forEach((id,t) => {
+      const c = el("span", "chip click" + (sel.b===b && sel.t===t ? " sel" : ""), `${esc(show(chars[id]))}<small>[${b},${t}]</small>`);
+      c.tabIndex = 0;
+      const go = () => { sel = {b,t}; renderModel(); };
+      c.addEventListener("click", go); c.addEventListener("keydown", e => { if (e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } });
+      line.append(c);
+    });
+    px.append(line);
+  });
+  const r = batch.x[sel.b][sel.t];
+  hmGrid($("table"), W, { fmt: x => x.toFixed(1), rowSel: r });
+  $("lookup-cap").textContent = `logits[${sel.b}, ${sel.t}] = W[${r}] = row "${show(chars[r])}"`;
+  const lt = $("logits-tensor"); lt.innerHTML = "";
+  batch.x.forEach((row,b) => {
+    const blk = el("div","blk"); blk.append(el("div","cap",`logits[${b}]  (4, 10)`));
+    const g = el("div","hm"); g.style.gridTemplateColumns = `22px repeat(${V}, 16px)`;
+    row.forEach((id,t) => {
+      g.append(el("div","h", esc(show(chars[id]))));
+      W[id].forEach(x => { const d = el("div","v"); d.style.background = heat(x); d.style.height = "16px"; if (b===sel.b && t===sel.t) d.classList.add("rowsel"); g.append(d); });
+    });
+    blk.append(g); lt.append(blk);
+  });
+}
+
+// ---------- 6 loss ----------
+function renderLoss(){
+  const g = $("loss-table"); g.innerHTML = "";
+  g.append(el("div","rl","row  (b,t)  x→y"));
+  chars.forEach(c => g.append(el("div","hd", esc(show(c)))));
+  g.append(el("div","num hd","p(y)")); g.append(el("div","num hd","−ln p"));
+  let sum = 0, rowN = 0, ex = null;
+  batch.x.forEach((row,b) => row.forEach((id,t) => {
+    const y = batch.y[b][t], p = softmax(W[id]), l = -Math.log(p[y]); sum += l;
+    if (b===sel.b && t===sel.t) ex = {id, y, p, l, logits: W[id]};
+    g.append(el("div","rl", `${rowN}  (${b},${t})  ${esc(show(chars[id]))}→${esc(show(chars[y]))}`));
+    p.forEach((q,c) => { const d = el("div","v hm-c", (q*100).toFixed(0)); d.style.cssText = `background:${pheat(q)};height:22px;display:flex;align-items:center;justify-content:center;border-radius:2px;font-size:10px`; if (c===y) d.style.outline = "2px solid var(--amber)", d.style.outlineOffset = "-2px", d.style.fontWeight = "600"; g.append(d); });
+    g.append(el("div","num", q3(p[y]))); g.append(el("div","num", l.toFixed(3)));
+    rowN++;
+  }));
+  const mean = sum / (B*T);
+  $("loss-total").innerHTML = `<span>loss = mean of 8 = <b>${mean.toFixed(3)}</b></span><span>uniform guess: −ln(1/10) = ln 10 = <b>${ln10.toFixed(3)}</b></span>`;
+  const sumExp = ex.logits.reduce((a,x)=>a+Math.exp(x),0);
+  $("loss-explain").innerHTML = `Selected token <code>x[${sel.b},${sel.t}] = "${esc(show(chars[ex.id]))}"</code>, true next <code>"${esc(show(chars[ex.y]))}"</code>: `+
+    `logit = ${ex.logits[ex.y].toFixed(2)} → e<sup>${ex.logits[ex.y].toFixed(2)}</sup> = ${Math.exp(ex.logits[ex.y]).toFixed(2)} → ÷ Σe<sup>x</sup> (${sumExp.toFixed(2)}) = p = ${ex.p[ex.y].toFixed(3)} → −ln p = <b>${ex.l.toFixed(3)}</b>. `+
+    (steps===0 ? `Cells show p × 100. With perfectly even guesses every cell would be 10 and the loss would be exactly 2.303. Random N(0,1) weights make some guesses confidently wrong, which pushes the loss above that.` : `After training, the outlined cells (the right answers) should be getting darker.`);
+}
+const q3 = x => x.toFixed(3);
+
+// ---------- 8 generate ----------
+let ctx = [stoi["\n"]], phase = 0, rDraw = rGen(), lastNew = -1;
+const phaseLabels = ["Next step: slice the last row","Next step: softmax","Next step: sample","Next step: append","Next step: forward again"];
+function genCompute(){
+  const last = ctx[ctx.length-1];
+  const p = softmax(W[last]);
+  let cum = 0, pick = V-1; for (let k=0;k<V;k++){ cum += p[k]; if (rDraw < cum){ pick = k; break; } }
+  return {last, p, pick};
+}
+function renderGen(){
+  const {last, p, pick} = genCompute();
+  // ctx
+  const cb = $("ctx"); cb.innerHTML = "";
+  ctx.forEach((id,i) => { const ch = chars[id]; const s = el("span", (i===lastNew ? "new " : "") + (ch==="\n" ? "nl" : ""), ch==="\n" ? "↵\n" : esc(ch)); cb.append(s); });
+  cb.scrollTop = cb.scrollHeight;
+  // ① forward
+  const Tn = ctx.length, showRows = ctx.slice(-6);
+  const g = el("div","hm"); g.style.gridTemplateColumns = `22px repeat(${V}, minmax(14px,1fr))`;
+  g.append(el("div","h","")); chars.forEach(c => g.append(el("div","h", esc(show(c)))));
+  showRows.forEach((id,k) => { g.append(el("div","h", esc(show(chars[id])))); W[id].forEach(x => { const d = el("div","v"); d.style.background = heat(x); d.style.height = "18px"; if (k===showRows.length-1 && phase>=1) d.classList.add("rowsel"); g.append(d); }); });
+  $("p-forward").innerHTML = `<div class="cap">T = ${Tn}${Tn>6 ? ` (showing last 6 of ${Tn} rows)` : ""}. One row per position, each row = W[that char]</div>`;
+  $("p-forward").append(g);
+  // ② slice
+  $("p-slice").innerHTML = `<div class="cap">only position T−1 = "${esc(show(chars[last]))}" predicts the unknown next char</div><div class="vec">${W[last].map((x,k)=>`<span>${esc(show(chars[k]))}:${f2(x)}</span>`).join("")}</div>`;
+  // ③ softmax
+  const e = W[last].map(Math.exp), s = e.reduce((a,b)=>a+b,0);
+  let tbl = `<table class="mini"><tr><th>char</th><th>logit x</th><th>eˣ</th><th>p</th></tr>`;
+  e.forEach((ex,k) => { tbl += `<tr${phase>=3 && k===pick ? ' class="pick"' : ""}><td>${esc(show(chars[k]))}</td><td>${W[last][k].toFixed(2)}</td><td>${ex.toFixed(2)}</td><td>${p[k].toFixed(3)}</td></tr>`; });
+  tbl += `<tr><th>Σ</th><th></th><th>${s.toFixed(2)}</th><th>1.000</th></tr></table>`;
+  const bars = `<div class="bars">${p.map((q,k)=>`<div class="bar${phase>=3 && k===pick ? " pick" : ""}" style="height:${Math.max(1,q*100/Math.max(...p)).toFixed(1)}%"></div>`).join("")}</div><div class="barlab">${p.map((q,k)=>`<span><b>${esc(show(chars[k]))}</b>${(q*100).toFixed(0)}%</span>`).join("")}</div>`;
+  $("p-softmax").innerHTML = bars + tbl;
+  // ④ sample
+  let cum = 0, segs = "";
+  p.forEach((q,k) => { segs += `<div style="width:${(q*100).toFixed(2)}%;background:${k===pick && phase>=3 ? "var(--amber-soft)" : k%2 ? "var(--cell0)" : "var(--accent-soft)"}" title="${show(chars[k])}: ${cum.toFixed(3)}–${(cum+q).toFixed(3)}">${q>0.06 ? esc(show(chars[k])) : ""}</div>`; cum += q; });
+  $("p-sample").innerHTML = `<div class="cap">Lay the probabilities end to end on 0 → 1 and draw r ~ Uniform(0, 1). The slice r lands in is the sample, so a big p means a big target.</div>
+    <div class="stack">${segs}<div class="marker" style="left:calc(${(rDraw*100).toFixed(2)}% - 1px)"></div></div>
+    <div class="cap">r = ${rDraw.toFixed(3)} → <b style="color:var(--amber)">"${esc(show(chars[pick]))}"</b> (p = ${p[pick].toFixed(3)}). argmax would always pick "${esc(show(chars[p.indexOf(Math.max(...p))]))}".</div>`;
+  // ⑤ cat
+  const tail = ctx.slice(-8).map(i=>show(chars[i])).join("");
+  $("p-cat").innerHTML = `<div class="cap">idx (1, ${Tn}) + idx_next (1, 1) → (1, ${Tn+1})</div>
+    <div class="mono" style="font-size:15px">…${esc(tail)}<span style="background:var(--amber-soft);color:var(--amber);font-weight:600;padding:0 2px">${esc(show(chars[pick]))}</span></div>
+    <div class="cap">Then the loop runs again with the longer idx. A bigram only ever reads the new last char.</div>`;
+  // highlight
+  document.querySelectorAll("#panels .panel").forEach(pn => { const k = +pn.dataset.p; pn.classList.toggle("active", k===phase); pn.classList.toggle("pending", k>phase); });
+  document.querySelectorAll("#gen-code .ln").forEach((ln,k) => ln.classList.toggle("on", k===phase));
+  $("gen-step").textContent = phaseLabels[phase];
+}
+function commit(){ const {pick} = genCompute(); ctx.push(pick); lastNew = ctx.length-1; rDraw = rGen(); }
+$("gen-step").addEventListener("click", () => { if (phase===4){ commit(); phase = 0; } else phase++; renderGen(); });
+$("gen-20").addEventListener("click", () => { for (let k=0;k<20;k++) commit(); lastNew = -1; phase = 0; renderGen(); });
+$("gen-reset").addEventListener("click", () => { ctx = [stoi["\n"]]; lastNew = -1; phase = 0; renderGen(); });
+
+// ---------- 9 training ----------
+const TB = 32, TT = 8, lr = 1e-2, b1 = .9, b2 = .999, eps = 1e-8, wd = 1e-2;
+function trainStep(){
+  const grad = W.map(r => r.map(() => 0)); const N = TB*TT; let loss = 0;
+  for (let b=0;b<TB;b++){
+    const i = Math.floor(rTrain()*(train.length-TT));
+    for (let t=0;t<TT;t++){
+      const x = train[i+t], y = train[i+t+1], p = softmax(W[x]); loss -= Math.log(p[y]);
+      for (let c=0;c<V;c++) grad[x][c] += (p[c] - (c===y?1:0)) / N;
+    }
+  }
+  adamT++;
+  for (let r=0;r<V;r++) for (let c=0;c<V;c++){
+    W[r][c] -= lr*wd*W[r][c];
+    m[r][c] = b1*m[r][c] + (1-b1)*grad[r][c];
+    v[r][c] = b2*v[r][c] + (1-b2)*grad[r][c]**2;
+    const mh = m[r][c]/(1-b1**adamT), vh = v[r][c]/(1-b2**adamT);
+    W[r][c] -= lr*mh/(Math.sqrt(vh)+eps);
+  }
+  steps++;
+  if (steps % 25 === 0) hist.push({step:steps, train:lossOn(train), val:lossOn(val)});
+}
+function renderChart(){
+  const svg = $("chart"), Wd = 640, H = 230, L = 46, R = 14, Tp = 12, Bt = 32;
+  const maxS = Math.max(500, Math.ceil(steps/500)*500);
+  const maxY = Math.ceil(Math.max(ln10, ...hist.map(h=>Math.max(h.train,h.val))) * 2) / 2;
+  const xs = s => L + (Wd-L-R)*s/maxS, ys = y => Tp + (H-Tp-Bt)*(1 - y/maxY);
+  let o = "";
+  for (let y=0;y<=maxY+1e-9;y+=0.5){ o += `<line x1="${L}" x2="${Wd-R}" y1="${ys(y)}" y2="${ys(y)}" stroke="var(--line)" stroke-width="1"/><text x="${L-8}" y="${ys(y)+4}" text-anchor="end">${y.toFixed(1)}</text>`; }
+  const tickStep = maxS <= 1000 ? 100 : maxS <= 2500 ? 500 : 1000;
+  for (let s=0;s<=maxS;s+=tickStep) o += `<text x="${xs(s)}" y="${H-12}" text-anchor="middle">${s}</text>`;
+  o += `<line x1="${L}" x2="${Wd-R}" y1="${ys(ln10)}" y2="${ys(ln10)}" stroke="var(--muted)" stroke-dasharray="6 4" stroke-width="1.2"/>`;
+  o += `<line x1="${L}" x2="${Wd-R}" y1="${ys(optLoss)}" y2="${ys(optLoss)}" stroke="var(--ink)" stroke-dasharray="1.5 3" stroke-width="1.4"/>`;
+  const path = key => hist.map((h,k)=>`${k?"L":"M"}${xs(h.step).toFixed(1)},${ys(h[key]).toFixed(1)}`).join("");
+  o += `<path d="${path("val")}" fill="none" stroke="var(--amber)" stroke-width="2"/><path d="${path("train")}" fill="none" stroke="var(--accent)" stroke-width="2.2"/>`;
+  const h = hist[hist.length-1];
+  o += `<circle cx="${xs(h.step)}" cy="${ys(h.train)}" r="3.5" fill="var(--accent)"/><circle cx="${xs(h.step)}" cy="${ys(h.val)}" r="3.5" fill="var(--amber)"/>`;
+  svg.innerHTML = o;
+  $("train-stat").innerHTML = `step ${steps}: train loss <b style="color:var(--accent)">${h.train.toFixed(4)}</b>, val loss <b style="color:var(--amber)">${h.val.toFixed(4)}</b> · best possible on train ≈ ${optLoss.toFixed(3)}`;
+}
+function renderTrainHm(){
+  hmGrid($("hm-model"), W.map(softmax), { color: pheat, fmt: p => (p*100).toFixed(0), h:"24px" });
+  hmGrid($("hm-true"), trueP, { color: pheat, fmt: p => (p*100).toFixed(0), h:"24px" });
+}
+let training = false;
+$("train").addEventListener("click", () => {
+  if (training) return; training = true; $("train").disabled = true; $("train-reset").disabled = true;
+  const target = steps + 500;
+  const tick = () => {
+    for (let k=0;k<20 && steps<target;k++) trainStep();
+    renderChart(); renderTrainHm();
+    if (steps < target) requestAnimationFrame(tick);
+    else { training = false; $("train").disabled = false; $("train-reset").disabled = false; renderModel(); }
+  };
+  requestAnimationFrame(tick);
+});
+$("train-reset").addEventListener("click", () => { initWeights(); renderModel(); });
+
+// ---------- 7 journey of one example ----------
+const J = { x: stoi["h"], y: stoi["e"], W: null, stage: 0, lr: 1, hist: [] };
+const jTitles = [
+  "Start: one character and the character that follows it",
+  "encode: characters become ids",
+  "Forward ①: the embedding lookup copies one row out of W",
+  "Forward ②: reshape for cross_entropy",
+  "Forward ③: softmax turns the 10 scores into probabilities",
+  "Forward ④: the loss is −ln of the target's probability",
+  "Backward ①: loss.backward() computes the gradient at the logits",
+  "Backward ②: the gradient lands on one row of W",
+  "Update: optimizer.step() moves that row against its gradient",
+  "Result: run forward again and the loss went down"
+];
+function resetJourney(){ J.W = W.map(r => r.slice()); J.stage = 0; J.hist = []; renderJourney(); }
+function jCalc(){
+  const logits = J.W[J.x], p = softmax(logits), loss = -Math.log(p[J.y]);
+  const g = p.map((q,c) => q - (c===J.y ? 1 : 0));
+  const after = logits.map((v,c) => v - J.lr*g[c]);
+  const pA = softmax(after), lossA = -Math.log(pA[J.y]);
+  return { logits, p, loss, g, after, pA, lossA };
+}
+const lab = c => esc(show(chars[c]));
+function jvec(vals, color, fmt, hi){
+  return `<div class="jvec">${vals.map((v,c)=>`<div class="${c===hi?"tgt":""}" style="background:${color(v)}"><small>${lab(c)}</small>${fmt(v)}</div>`).join("")}</div>`;
+}
+const fmt2 = v => v.toFixed(2);
+function dbars(vals, max){
+  return `<div class="dbars">${vals.map(v=>{ const h = Math.min(50, Math.abs(v)/max*50); return `<div class="dcol"><div class="dbar" style="${v>=0?"bottom":"top"}:50%;height:${h.toFixed(1)}%;background:var(${v>=0?"--hot":"--cold"})"></div></div>`; }).join("")}</div><div class="barlab">${vals.map((v,c)=>`<span><b>${lab(c)}</b>${v.toFixed(2)}</span>`).join("")}</div>`;
+}
+function gbars(a, b, hi){
+  const mx = Math.max(...a, ...b);
+  return `<div class="gbars">${a.map((q,c)=>`<div class="gcol"><div style="height:${(q/mx*100).toFixed(1)}%;background:var(--muted);opacity:.55"></div><div style="height:${(b[c]/mx*100).toFixed(1)}%;background:var(${c===hi?"--amber":"--accent"})"></div></div>`).join("")}</div><div class="barlab">${a.map((q,c)=>`<span><b>${lab(c)}</b>${(q*100).toFixed(0)}→${(b[c]*100).toFixed(0)}</span>`).join("")}</div>`;
+}
+function lnCurve(p){
+  const Wd=340, H=170, L=34, R=12, T=10, Bt=28, ymax=4.6;
+  const xs = q => L + (Wd-L-R)*q, ys = y => T + (H-T-Bt)*(1 - Math.min(y,ymax)/ymax);
+  let d = ""; for (let k=1;k<=100;k++){ const q=k/100; d += (k>1?"L":"M") + xs(q).toFixed(1) + "," + ys(-Math.log(q)).toFixed(1); }
+  let o = `<line x1="${L}" x2="${Wd-R}" y1="${ys(0)}" y2="${ys(0)}" stroke="var(--line)"/><line x1="${L}" x2="${L}" y1="${T}" y2="${ys(0)}" stroke="var(--line)"/>`;
+  [0,2,4].forEach(y => o += `<text x="${L-6}" y="${ys(y)+4}" text-anchor="end">${y}</text>`);
+  [0,.1,.5,1].forEach(q => o += `<text x="${xs(q)}" y="${H-10}" text-anchor="middle">${q}</text>`);
+  o += `<line x1="${xs(.1)}" x2="${xs(.1)}" y1="${T}" y2="${ys(0)}" stroke="var(--muted)" stroke-dasharray="4 3"/>`;
+  o += `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2"/>`;
+  o += `<circle cx="${xs(Math.max(p,.01))}" cy="${ys(-Math.log(p))}" r="5" fill="var(--amber)"/>`;
+  return `<svg viewBox="0 0 ${Wd} ${H}" style="width:100%;max-width:380px;height:auto;display:block" role="img" aria-label="Curve of loss = −ln p">${o}</svg><div class="cap">x-axis: p(target) · y-axis: loss = −ln p · dashed line: p = 0.1 (uniform guess)</div>`;
+}
+function renderJourney(){
+  const s = J.stage, k = jCalc(), x = J.x, y = J.y, cx = lab(x), cy = lab(y);
+  // flow strip
+  const fwdOn = [0,1,2,3,4,5,3,2,2,5][s];
+  const nodes = [
+    ["text", `"${cx}" → "${cy}"`], ["ids", `${x} → ${y}`], ["W row", s>=8 ? `W[${x}] −= lr·grad` : `W[${x}]`],
+    ["logits", "(1, 10)"], ["probs", `p["${cy}"]=${k.p[y].toFixed(2)}`], ["loss", s===9 ? `${k.loss.toFixed(2)}→${k.lossA.toFixed(2)}` : k.loss.toFixed(3)]
+  ];
+  const back = [
+    s>=7 ? "text: no grad" : "", s>=7 ? "ints: no grad" : "", s>=7 ? `grad row ${x} = p − y<br>other rows = 0` : "",
+    s>=6 ? "∂L/∂logits<br>= p − onehot" : "", s>=6 ? "softmax + −ln<br>fused" : "", s>=6 ? "∂L/∂L = 1" : ""
+  ];
+  const backOn = s===6 ? 3 : (s===7 || s===8) ? 2 : -1;
+  let fh = "";
+  nodes.forEach(([t,v],i) => { const cls = i===fwdOn ? "on" : (i<fwdOn || s>=6) ? "done" : ""; fh += `<div class="fnode ${cls}"><small>${t}</small>${v}</div>`; });
+  back.forEach((b,i) => { const on = !!b, nextOn = i<5 && !!back[i+1]; fh += `<div class="bnode ${on?"":"off"} ${on&&nextOn?"arr":""} ${i===backOn?"on":""}">${b || "·"}</div>`; });
+  $("j-flow").innerHTML = fh;
+  document.querySelectorAll("#j-code .ln").forEach((ln,i) => ln.classList.toggle("on", i===s));
+  $("j-title").textContent = `Step ${s+1} of 10 · ${jTitles[s]}`;
+  $("j-prev").disabled = s===0; $("j-next").disabled = s===9;
+  $("j-next").textContent = s===9 ? "Done" : "Next →";
+  // detail
+  const D = $("j-detail"); let h = "";
+  if (s===0){
+    let pos = -1; for (let i=0;i<corpus.length-1;i++) if (corpus[i]===chars[x] && corpus[i+1]===chars[y]) { pos = i; break; }
+    if (pos >= 0){
+      const a = Math.max(0,pos-14), b = Math.min(corpus.length,pos+16);
+      let sn = ""; for (let i=a;i<b;i++) sn += i===pos ? `<span class="hx">${esc(show(corpus[i]))}</span>` : i===pos+1 ? `<span class="hy">${esc(show(corpus[i]))}</span>` : esc(show(corpus[i]));
+      h += `<div class="snip">…${sn}…</div><p>Somewhere in the text, <b>"${cx}"</b> is followed by <b>"${cy}"</b>. That gives one training example: <b>input "${cx}"</b>, <b>target "${cy}"</b>. In <code>train_data</code> this pair occurs <b>${counts[x][y]}</b> time${counts[x][y]===1?"":"s"} out of ${counts[x].reduce((a,b)=>a+b,0)} times "${cx}" appears.</p>`;
+    } else h += `<p>"${cx}" is never followed by "${cy}" in our text. We can still push the model toward it to watch the mechanics, but real training would never ask for this.</p>`;
+    h += `<p class="note">In get_batch this pair would be <code>x[b, t] = "${cx}"</code>, <code>y[b, t] = "${cy}"</code>: one cell of the shift-by-one.</p>`;
+  }
+  if (s===1){
+    h += `<div class="row" style="gap:28px;align-items:center"><div class="chips"><span class="chip">${cx}<small>char</small></span><span class="arrow">→ stoi →</span><span class="chip id">${x}<small>idx</small></span></div><div class="chips"><span class="chip">${cy}<small>char</small></span><span class="arrow">→ stoi →</span><span class="chip id" style="background:var(--amber-soft)">${y}<small>target</small></span></div></div>
+      <p><code>idx = [[${x}]]</code> has shape <b>(1, 1)</b>: B = 1 sequence of T = 1 character. <code>targets = [[${y}]]</code>, also (1, 1). From here on the model only sees numbers.</p>`;
+  }
+  if (s===2){
+    h += `<div class="scroll"><div class="hm" id="j-table"></div></div><p>The embedding layer does <b>no maths</b>. It goes to row ${x} ("${cx}") of W and copies those 10 numbers out. That copy is the logits: one score for each possible next character.</p><div class="jrow"><span>logits</span>${jvec(k.logits, heat, fmt2, -1)}</div>`;
+  }
+  if (s===3){
+    h += `<div class="jrow"><span>(1, 1, 10)</span>${jvec(k.logits, heat, fmt2, -1)}</div><p><code>view(1, 10)</code> just drops the T axis. The numbers don't change, only the shape. <code>targets.view(1)</code> becomes <code>[${y}]</code>. With a full batch this would be <code>(32, 8, 10) → (256, 10)</code>.</p>`;
+  }
+  if (s===4){
+    const e = k.logits.map(Math.exp), sum = e.reduce((a,b)=>a+b,0);
+    h += `<div class="jrow"><span>logits x</span>${jvec(k.logits, heat, fmt2, y)}</div><div class="jrow"><span>eˣ</span>${jvec(e, () => "var(--cell0)", fmt2, y)}</div><div class="jrow"><span>eˣ / ${sum.toFixed(2)}</span>${jvec(k.p, pheat, v => v.toFixed(3), y)}</div>
+      <div class="bars">${k.p.map((q,c)=>`<div class="bar${c===y?" pick":""}" style="height:${Math.max(1,q*100/Math.max(...k.p)).toFixed(1)}%"></div>`).join("")}</div><div class="barlab">${k.p.map((q,c)=>`<span><b>${lab(c)}</b>${(q*100).toFixed(0)}%</span>`).join("")}</div>
+      <p>The true answer "${cy}" (outlined) currently gets <b>${(k.p[y]*100).toFixed(1)}%</b>. A perfect model would put 100% there.</p>`;
+  }
+  if (s===5){
+    h += `<div class="big">loss = −ln p["${cy}"] = −ln(${k.p[y].toFixed(4)}) = <b>${k.loss.toFixed(4)}</b></div><div class="row" style="gap:24px;align-items:center"><div style="flex:1 1 300px">${lnCurve(k.p[y])}</div><div style="flex:1 1 240px" class="note">If p = 1 the loss is 0 (perfect). If p = 0.1, a uniform guess over 10 chars, the loss is 2.303. As p shrinks toward 0 the loss grows without limit, so confident wrong answers are punished hard. The other 9 probabilities don't appear in the formula directly, but they're tied to p["${cy}"] through the softmax.</div></div>`;
+  }
+  if (s===6){
+    const oh = chars.map((_,c) => c===y ? 1 : 0);
+    h += `<p>Calculus on −ln(softmax(x)[y]) gives a neat result: <b>∂loss/∂logit[c] = p[c] − (1 if c is the target else 0)</b>.</p>
+      <div class="jrow"><span>p</span>${jvec(k.p, pheat, v => v.toFixed(3), y)}</div><div class="jrow"><span>onehot(y)</span>${jvec(oh, v => v ? "var(--amber-soft)" : "var(--cell0)", v => v, y)}</div><div class="jrow"><span>grad = p − y</span>${jvec(k.g, v => heat(v*3), v => v.toFixed(3), y)}</div>
+      ${dbars(k.g, Math.max(...k.g.map(Math.abs)))}
+      <p><b style="color:var(--cold)">Negative</b> for the target: ${k.g[y].toFixed(3)} = ${k.p[y].toFixed(3)} − 1. Gradient descent moves <i>against</i> the gradient, so this logit will go <b>up</b>.<br><b style="color:var(--hot)">Positive</b> for every other char, equal to its own probability, so those logits go <b>down</b>. The more confidently wrong a char is, the harder it gets pushed. The gradients sum to ${Math.abs(k.g.reduce((a,b)=>a+b,0)).toFixed(3)}.</p>
+      <p class="note"><code>zero_grad()</code> comes first because PyTorch <i>adds</i> new gradients onto <code>.grad</code>. Without it, this step's gradient would pile on top of the last one.</p>`;
+  }
+  if (s===7){
+    const G = J.W.map((r,ri) => r.map((_,c) => ri===x ? k.g[c] : 0));
+    h += `<div class="scroll"><div class="hm" id="j-grad"></div></div><p>The lookup only <i>copied</i> row ${x}, so the gradient flows back to that row alone. <b>W.grad</b> is all zeros except row "${cx}", which receives exactly p − y. The other 90 numbers aren't involved in this example, so their gradient is 0.</p><p class="note">With a full batch, each of the 256 (input, target) pairs drops its own p − y into the row of its input char, and they're added together (then ÷ 256 for the mean). Rows of chars that appear often collect more signal.</p>`;
+    D.innerHTML = h; hmGrid($("j-grad"), G, { color: v => heat(v*3), fmt: v => v===0 ? "·" : v.toFixed(2).replace(/^(-?)0\./,"$1."), rowSel: x });
+    return;
+  }
+  if (s===8){
+    const delta = k.g.map(v => -J.lr*v);
+    h += `<p><b>W[${x}] = W[${x}] − lr × grad</b>, with lr = ${J.lr}. Only row "${cx}" changes.</p>
+      <div class="jrow"><span>before</span>${jvec(k.logits, heat, fmt2, y)}</div><div class="jrow"><span>− lr·grad</span>${jvec(delta, v => heat(v*3), v => (v>=0?"+":"")+v.toFixed(2), y)}</div><div class="jrow"><span>after</span>${jvec(k.after, heat, fmt2, y)}</div>
+      ${dbars(delta, Math.max(...delta.map(Math.abs)))}
+      <p>"${cy}" goes up by lr × (1 − p) = ${(J.lr*(1-k.p[y])).toFixed(3)}. Every other char goes down by lr × its own probability.</p><p class="note">The real notebook uses AdamW, which rescales each step using running averages of past gradients. The <i>direction</i> comes from the same p − y.</p>`;
+  }
+  if (s===9){
+    const seq = [...J.hist, k.loss, k.lossA];
+    h += `<div class="big">p["${cy}"]: ${k.p[y].toFixed(3)} → <b>${k.pA[y].toFixed(3)}</b> &nbsp;·&nbsp; loss: ${k.loss.toFixed(3)} → <b>${k.lossA.toFixed(3)}</b></div>
+      ${gbars(k.p, k.pA, y)}
+      <p class="cap">grey = probabilities before the update · coloured = after</p>
+      <div><h3>Loss on this pair, step by step</h3><div class="hist" style="margin-top:6px">${seq.map((l,i)=>`<span class="l${i===seq.length-1?" now":""}">${l.toFixed(3)}</span>`).join("<span>→</span>")}</div></div>
+      <p>That's one complete training step. Click <b>Run another training step</b> to go round the loop again from the new weights. Each step gives smaller improvements because the gradient for "${cy}" is p − 1, which shrinks as p gets close to 1. Training on just this one pair would push p["${cy}"] all the way to 1. Real training mixes in every pair that starts with "${cx}", so it settles at the true frequency instead.</p>`;
+  }
+  D.innerHTML = h;
+  if (s===2) hmGrid($("j-table"), J.W, { fmt: v => v.toFixed(1), rowSel: x });
+}
+chars.forEach((c,i) => { $("j-x").append(new Option(`${show(c)}  (${i})`, i)); $("j-y").append(new Option(`${show(c)}  (${i})`, i)); });
+$("j-x").value = J.x; $("j-y").value = J.y;
+$("j-x").addEventListener("change", e => { J.x = +e.target.value; J.hist = []; renderJourney(); });
+$("j-y").addEventListener("change", e => { J.y = +e.target.value; J.hist = []; renderJourney(); });
+$("j-lr").addEventListener("change", e => { J.lr = +e.target.value; renderJourney(); });
+$("j-prev").addEventListener("click", () => { if (J.stage>0){ J.stage--; renderJourney(); } });
+$("j-next").addEventListener("click", () => { if (J.stage<9){ J.stage++; renderJourney(); } });
+$("j-again").addEventListener("click", () => { const k = jCalc(); J.hist.push(k.loss); J.W[J.x] = k.after; J.stage = 9; renderJourney(); });
+$("j-reset").addEventListener("click", resetJourney);
+
+function renderModel(){ renderTable(); renderLoss(); renderGen(); renderChart(); renderTrainHm(); }
+
+initWeights(); newBatch(); renderEnc(); renderBatch(); renderModel(); resetJourney();
+})();
+</script>
+</body>
+</html>
